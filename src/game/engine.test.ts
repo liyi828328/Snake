@@ -27,6 +27,11 @@ function finiteFoodSpawner(...points: Point[]): FoodSpawner {
   return () => queue.shift() ?? null;
 }
 
+function sequenceRandom(...values: number[]): () => number {
+  let index = 0;
+  return () => values[index++] ?? values.at(-1) ?? 0;
+}
+
 describe('速度配置', () => {
   it('食物数量很大时仍不会低于最低间隔', () => {
     expect(tickMsForFoodCount(10_000)).toBe(65);
@@ -289,6 +294,227 @@ describe('进食与速度', () => {
       foods: [],
       foodCount: 10,
     });
+  });
+});
+
+describe('限时双倍奖励食物', () => {
+  it('每隔最短三十秒生成六个，五秒后只清除奖励食物', () => {
+    const normalPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 0 }));
+    const firstBonusPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 1 }));
+    const secondBonusPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 2 }));
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: sequenceRandom(0, 0, 0, 0, 0),
+      foodSpawner: scriptedFoodSpawner(
+        ...normalPoints,
+        ...firstBonusPoints,
+        ...secondBonusPoints,
+      ),
+    });
+    engine.start();
+
+    const playing = engine.snapshot();
+    engine.advanceTime(29_999);
+    expect(engine.snapshot()).toBe(playing);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+
+    engine.advanceTime(1);
+    const firstBatch = engine.snapshot();
+    expect(firstBatch.foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+    expect(firstBatch.foods.filter(({ kind }) => kind === 'normal')).toHaveLength(6);
+
+    engine.advanceTime(4_999);
+    expect(engine.snapshot()).toBe(firstBatch);
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'normal')).toHaveLength(6);
+
+    engine.advanceTime(24_999);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+  });
+
+  it('随机数为一时在一百二十秒生成十个奖励食物', () => {
+    const normalPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 0 }));
+    const bonusPoints = Array.from({ length: 10 }, (_, x) => ({ x, y: 1 }));
+    const engine = new SnakeEngine({
+      width: 20,
+      height: 10,
+      random: sequenceRandom(1, 1, 1),
+      foodSpawner: scriptedFoodSpawner(...normalPoints, ...bonusPoints),
+    });
+    engine.start();
+
+    engine.advanceTime(119_999);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(10);
+  });
+
+  it.each([
+    ['NaN', Number.NaN, 30_000, 6],
+    ['负无穷', Number.NEGATIVE_INFINITY, 30_000, 6],
+    ['负数', -1, 30_000, 6],
+    ['正无穷', Number.POSITIVE_INFINITY, 120_000, 10],
+    ['大于一', 2, 120_000, 10],
+  ])('将%s随机数夹到抽样范围', (_caseName, randomValue, intervalMs, count) => {
+    const normalPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 0 }));
+    const bonusPoints = Array.from({ length: 10 }, (_, x) => ({ x, y: 1 }));
+    const engine = new SnakeEngine({
+      width: 20,
+      height: 10,
+      random: sequenceRandom(randomValue, randomValue, 0),
+      foodSpawner: scriptedFoodSpawner(...normalPoints, ...bonusPoints),
+    });
+    engine.start();
+
+    engine.advanceTime(intervalMs - 1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(count);
+  });
+
+  it('吃掉奖励食物获得二十分、增长一格且不会补充奖励', () => {
+    const normalPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 0 }));
+    const bonusPoints = [
+      { x: 8, y: 5 },
+      ...Array.from({ length: 5 }, (_, x) => ({ x, y: 1 })),
+    ];
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: sequenceRandom(0, 0, 0),
+      foodSpawner: scriptedFoodSpawner(...normalPoints, ...bonusPoints),
+    });
+    engine.start();
+    engine.advanceTime(30_000);
+
+    expect(engine.step()).toEqual([
+      { type: 'foodEaten', at: { x: 8, y: 5 }, score: 20 },
+    ]);
+    const snapshot = engine.snapshot();
+    expect(snapshot.body).toHaveLength(5);
+    expect(snapshot).toMatchObject({ score: 20, foodCount: 1 });
+    expect(snapshot.foods.filter(({ kind }) => kind === 'normal')).toHaveLength(6);
+    expect(snapshot.foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(5);
+  });
+
+  it('就绪和暂停期间不计时，恢复后从原进度继续', () => {
+    const points = [
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 0 })),
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 1 })),
+    ];
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: sequenceRandom(0, 0, 0),
+      foodSpawner: scriptedFoodSpawner(...points),
+    });
+
+    engine.advanceTime(30_000);
+    engine.start();
+    engine.advanceTime(29_999);
+    engine.togglePause();
+    engine.advanceTime(30_000);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+
+    engine.togglePause();
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -1])(
+    '异常时间增量 %s 按零处理',
+    (deltaMs) => {
+      const points = [
+        ...Array.from({ length: 6 }, (_, x) => ({ x, y: 0 })),
+        ...Array.from({ length: 6 }, (_, x) => ({ x, y: 1 })),
+      ];
+      const engine = new SnakeEngine({
+        width: 14,
+        height: 10,
+        random: sequenceRandom(0, 0, 0),
+        foodSpawner: scriptedFoodSpawner(...points),
+      });
+      engine.start();
+      const before = engine.snapshot();
+
+      engine.advanceTime(deltaMs);
+      expect(engine.snapshot()).toBe(before);
+      engine.advanceTime(29_999);
+      expect(engine.snapshot()).toBe(before);
+      engine.advanceTime(1);
+      expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+    },
+  );
+
+  it.each([Number.MAX_SAFE_INTEGER, Number.MAX_VALUE])(
+    '极大的有限时间增量 %s 不会使计时停滞',
+    (deltaMs) => {
+      const points = [
+        ...Array.from({ length: 6 }, (_, x) => ({ x, y: 0 })),
+        ...Array.from({ length: 6 }, (_, x) => ({ x, y: 1 })),
+      ];
+      const engine = new SnakeEngine({
+        width: 14,
+        height: 10,
+        random: sequenceRandom(0, 0, 0),
+        foodSpawner: scriptedFoodSpawner(...points),
+      });
+      engine.start();
+
+      expect(() => engine.advanceTime(deltaMs)).not.toThrow();
+      expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+    },
+  );
+
+  it('暂停时重开会清除奖励并重新抽取首次倒计时', () => {
+    const points = [
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 0 })),
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 1 })),
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 2 })),
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 3 })),
+    ];
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: sequenceRandom(0, 0, 0, 1, 0, 0),
+      foodSpawner: scriptedFoodSpawner(...points),
+    });
+    engine.start();
+    engine.advanceTime(30_000);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+    engine.togglePause();
+
+    expect(engine.restart()).toBe(true);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    engine.start();
+    engine.advanceTime(119_999);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+  });
+
+  it('空间不足时不会生成重叠奖励或移除普通食物', () => {
+    const normalPoints = [
+      ...Array.from({ length: 5 }, (_, x) => ({ x, y: 0 })),
+      { x: 4, y: 1 },
+    ];
+    const engine = new SnakeEngine({
+      width: 5,
+      height: 2,
+      random: sequenceRandom(0, 0, 0),
+      foodSpawner: scriptedFoodSpawner(...normalPoints),
+    });
+    engine.start();
+
+    expect(() => engine.advanceTime(30_000)).not.toThrow();
+    const foods = engine.snapshot().foods;
+    expect(foods).toHaveLength(6);
+    expect(foods.every(({ kind }) => kind === 'normal')).toBe(true);
+    expect(new Set(foods.map(({ x, y }) => `${x},${y}`)).size).toBe(6);
   });
 });
 

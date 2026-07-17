@@ -1,4 +1,10 @@
 import {
+  BONUS_FOOD_LIFETIME_MS,
+  BONUS_FOOD_MAX,
+  BONUS_FOOD_MAX_INTERVAL_MS,
+  BONUS_FOOD_MIN,
+  BONUS_FOOD_MIN_INTERVAL_MS,
+  BONUS_SCORE_PER_FOOD,
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
   DIRECTION_VECTOR,
@@ -43,6 +49,8 @@ export class SnakeEngine {
   private score = 0;
   private foodCount = 0;
   private directionQueue: Direction[] = [];
+  private bonusCountdownMs = 0;
+  private bonusRemainingMs = 0;
   private cachedSnapshot: GameSnapshot | null = null;
 
   constructor(options: SnakeEngineOptions = {}) {
@@ -84,7 +92,18 @@ export class SnakeEngine {
     this.foodCount = 0;
     this.directionQueue = [];
     this.foods = [];
+    this.bonusCountdownMs = this.sampleInteger(
+      BONUS_FOOD_MIN_INTERVAL_MS,
+      BONUS_FOOD_MAX_INTERVAL_MS,
+    );
+    this.bonusRemainingMs = 0;
     this.fillNormalFoods();
+  }
+
+  private sampleInteger(min: number, max: number): number {
+    const sampled = this.random();
+    const clamped = Number.isNaN(sampled) ? 0 : Math.min(1, Math.max(0, sampled));
+    return Math.min(max, min + Math.floor(clamped * (max - min + 1)));
   }
 
   private fillNormalFoods(): void {
@@ -94,6 +113,17 @@ export class SnakeEngine {
         return;
       }
       this.foods.push(food);
+    }
+  }
+
+  private spawnBonusFoods(count: number): void {
+    for (let index = 0; index < count; index += 1) {
+      const food = this.nextFood('bonus');
+      if (food === null) {
+        return;
+      }
+      this.foods.push(food);
+      this.invalidateSnapshot();
     }
   }
 
@@ -182,6 +212,34 @@ export class SnakeEngine {
     return true;
   }
 
+  advanceTime(deltaMs: number): void {
+    if (this.status !== 'playing' || !Number.isFinite(deltaMs) || deltaMs <= 0) {
+      return;
+    }
+
+    if (this.bonusRemainingMs > 0) {
+      this.bonusRemainingMs = Math.max(0, this.bonusRemainingMs - deltaMs);
+      if (this.bonusRemainingMs === 0) {
+        const previousLength = this.foods.length;
+        this.foods = this.foods.filter(({ kind }) => kind === 'normal');
+        if (this.foods.length !== previousLength) {
+          this.invalidateSnapshot();
+        }
+      }
+    }
+
+    this.bonusCountdownMs = Math.max(0, this.bonusCountdownMs - deltaMs);
+    if (this.bonusCountdownMs === 0) {
+      const count = this.sampleInteger(BONUS_FOOD_MIN, BONUS_FOOD_MAX);
+      this.spawnBonusFoods(count);
+      this.bonusRemainingMs = BONUS_FOOD_LIFETIME_MS;
+      this.bonusCountdownMs = this.sampleInteger(
+        BONUS_FOOD_MIN_INTERVAL_MS,
+        BONUS_FOOD_MAX_INTERVAL_MS,
+      );
+    }
+  }
+
   queueDirection(next: Direction): boolean {
     if (this.status !== 'playing' || this.directionQueue.length >= MAX_DIRECTION_QUEUE) {
       return false;
@@ -209,7 +267,8 @@ export class SnakeEngine {
     const eatenIndex = this.foods.findIndex(({ x, y }) => (
       nextHead.x === x && nextHead.y === y
     ));
-    const ateFood = eatenIndex !== -1;
+    const eatenFood = eatenIndex === -1 ? null : this.foods[eatenIndex]!;
+    const ateFood = eatenFood !== null;
     const collisionBody = ateFood ? this.body : this.body.slice(0, -1);
     const hitWall = nextHead.x < 0
       || nextHead.x >= this.width
@@ -230,18 +289,22 @@ export class SnakeEngine {
     }
 
     this.foodCount += 1;
-    this.score += SCORE_PER_FOOD;
+    this.score += eatenFood.kind === 'bonus' ? BONUS_SCORE_PER_FOOD : SCORE_PER_FOOD;
     this.foods.splice(eatenIndex, 1);
     const events: GameEvent[] = [
       { type: 'foodEaten', at: { ...nextHead }, score: this.score },
     ];
     if (this.body.length === this.width * this.height) {
       this.foods = [];
+      this.bonusCountdownMs = 0;
+      this.bonusRemainingMs = 0;
       this.status = 'completed';
       events.push({ type: 'completed', score: this.score });
       return events;
     }
-    this.fillNormalFoods();
+    if (eatenFood.kind === 'normal') {
+      this.fillNormalFoods();
+    }
 
     if (this.foodCount % SPEED_UP_EVERY_FOOD === 0) {
       events.push({
