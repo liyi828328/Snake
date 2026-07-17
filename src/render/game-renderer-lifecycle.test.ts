@@ -1,7 +1,7 @@
 // 使用 Node 环境与最小 DOM fake，避免 jsdom 画布探测噪声。
 // @vitest-environment node
 
-import { Container } from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
 import type { Application } from 'pixi.js';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +9,7 @@ import type { GameSnapshot } from '../game/types';
 import { GameRenderer } from './game-renderer';
 import type { GameRendererOptions } from './game-renderer';
 import { QualityGovernor } from './quality';
+import { THEME } from './theme';
 
 vi.mock('pixi.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('pixi.js')>();
@@ -119,9 +120,9 @@ function rendererOptions(
   return { ...overrides, applicationFactory };
 }
 
-function snapshot(): GameSnapshot {
+function snapshot(overrides: Partial<GameSnapshot> = {}): GameSnapshot {
   return {
-    width: 32,
+    width: 40,
     height: 24,
     body: [{ x: 2, y: 3 }],
     foods: [{ x: 10, y: 8, kind: 'normal' }],
@@ -130,7 +131,13 @@ function snapshot(): GameSnapshot {
     score: 0,
     foodCount: 0,
     tickMs: 120,
+    ...overrides,
   };
+}
+
+function foodLayer(application: Application): Container {
+  const scene = application.stage.children[0] as Container;
+  return scene.children[5] as Container;
 }
 
 describe('渲染器生命周期', () => {
@@ -238,6 +245,180 @@ describe('渲染器生命周期', () => {
 
     expect(sampleGovernor).not.toHaveBeenCalled();
     expect(governor.level).toBe('high');
+    renderer.destroy();
+  });
+
+  it('同时绘制普通食物和金色奖励食物', async () => {
+    const host = createFakeHost();
+    const fake = createFakeApplication(Promise.resolve());
+    const renderer = new GameRenderer(
+      host.element,
+      rendererOptions(() => fake.application),
+    );
+    await renderer.init();
+
+    const state = snapshot({
+      foods: [
+        { x: 4, y: 5, kind: 'normal' },
+        { x: 12, y: 9, kind: 'bonus' },
+      ],
+    });
+    renderer.render(state, state, 1, 0);
+
+    const foods = foodLayer(fake.application).children as Container[];
+    expect(foods).toHaveLength(2);
+    expect(foods.filter(({ visible }) => visible)).toHaveLength(2);
+    expect((foods[0]!.children[2] as Graphics).tint).toBe(THEME.food);
+    expect((foods[1]!.children[2] as Graphics).tint).toBe(THEME.bonusFood);
+    expect(foods[0]!.position.x).not.toBe(foods[1]!.position.x);
+    expect(foods[0]!.position.y).not.toBe(foods[1]!.position.y);
+
+    renderer.destroy();
+  });
+
+  it('金色奖励食物的光环会向外扩张并淡出', async () => {
+    const host = createFakeHost();
+    const fake = createFakeApplication(Promise.resolve());
+    const renderer = new GameRenderer(
+      host.element,
+      rendererOptions(() => fake.application),
+    );
+    await renderer.init();
+
+    const state = snapshot({ foods: [{ x: 10, y: 8, kind: 'bonus' }] });
+    renderer.render(state, state, 1, 0);
+    const firstRing = (
+      foodLayer(fake.application).children[0] as Container
+    ).children[0] as Graphics;
+    const initialScale = firstRing.scale.x;
+    const initialAlpha = firstRing.alpha;
+
+    renderer.render(state, state, 1, 350);
+
+    expect(firstRing.scale.x).toBeGreaterThan(initialScale);
+    expect(firstRing.alpha).toBeLessThan(initialAlpha);
+    renderer.destroy();
+  });
+
+  it('食物减少时隐藏多余容器并在再次增加时复用', async () => {
+    const host = createFakeHost();
+    const fake = createFakeApplication(Promise.resolve());
+    const renderer = new GameRenderer(
+      host.element,
+      rendererOptions(() => fake.application),
+    );
+    await renderer.init();
+
+    const twoFoods = snapshot({
+      foods: [
+        { x: 4, y: 5, kind: 'normal' },
+        { x: 12, y: 9, kind: 'bonus' },
+      ],
+    });
+    renderer.render(twoFoods, twoFoods, 1, 0);
+    const layer = foodLayer(fake.application);
+    const secondVisual = layer.children[1];
+
+    const oneFood = snapshot({ foods: [twoFoods.foods[0]!] });
+    renderer.render(oneFood, oneFood, 1, 0);
+    expect(layer.children).toHaveLength(2);
+    expect(layer.children[0]!.visible).toBe(true);
+    expect(layer.children[1]!.visible).toBe(false);
+
+    renderer.render(twoFoods, twoFoods, 1, 0);
+    expect(layer.children[1]).toBe(secondVisual);
+    expect(layer.children[1]!.visible).toBe(true);
+    renderer.destroy();
+  });
+
+  it('减少动态时金色奖励食物保持静态可见光环', async () => {
+    const host = createFakeHost();
+    const fake = createFakeApplication(Promise.resolve());
+    const renderer = new GameRenderer(
+      host.element,
+      rendererOptions(() => fake.application, { reducedMotion: true }),
+    );
+    await renderer.init();
+
+    const state = snapshot({ foods: [{ x: 10, y: 8, kind: 'bonus' }] });
+    renderer.render(state, state, 1, 0);
+    const visual = foodLayer(fake.application).children[0] as Container;
+    const firstRing = visual.children[0] as Graphics;
+    const outer = visual.children[2] as Graphics;
+    const initialScale = firstRing.scale.x;
+    const initialAlpha = firstRing.alpha;
+
+    renderer.render(state, state, 1, 350);
+
+    expect(firstRing.scale.x).toBe(initialScale);
+    expect(firstRing.alpha).toBe(initialAlpha);
+    expect(firstRing.alpha).toBeGreaterThan(0);
+    expect(outer.tint).toBe(THEME.bonusFood);
+    renderer.destroy();
+  });
+
+  it('预留十六个食物容器并在后续帧中只切换可见性', async () => {
+    const host = createFakeHost();
+    const fake = createFakeApplication(Promise.resolve());
+    const renderer = new GameRenderer(
+      host.element,
+      rendererOptions(() => fake.application),
+    );
+    await renderer.init();
+
+    const sixteenFoods = snapshot({
+      foods: Array.from({ length: 16 }, (_, index) => ({
+        x: index,
+        y: index % 4,
+        kind: index < 6 ? 'normal' as const : 'bonus' as const,
+      })),
+    });
+    renderer.render(sixteenFoods, sixteenFoods, 1, 0);
+    const layer = foodLayer(fake.application);
+    const visuals = [...layer.children];
+
+    const sixFoods = snapshot({ foods: sixteenFoods.foods.slice(0, 6) });
+    renderer.render(sixFoods, sixFoods, 1, 16);
+    renderer.render(sixFoods, sixFoods, 1, 16);
+
+    expect(layer.children).toHaveLength(16);
+    expect(layer.children.filter(({ visible }) => visible)).toHaveLength(6);
+    expect([...layer.children]).toEqual(visuals);
+    renderer.destroy();
+  });
+
+  it('食物池存在时会随画面与自定义棋盘尺寸重绘几何', async () => {
+    const host = createFakeHost();
+    const fake = createFakeApplication(Promise.resolve());
+    const renderer = new GameRenderer(
+      host.element,
+      rendererOptions(() => fake.application),
+    );
+    await renderer.init();
+
+    const initial = snapshot({
+      foods: [
+        { x: 4, y: 5, kind: 'normal' },
+        { x: 12, y: 9, kind: 'bonus' },
+      ],
+    });
+    renderer.render(initial, initial, 1, 0);
+    const layer = foodLayer(fake.application);
+    const firstVisual = layer.children[0] as Container;
+    const initialOuterWidth = (
+      firstVisual.children[2] as Graphics
+    ).getLocalBounds().width;
+    const initialX = firstVisual.position.x;
+
+    Object.assign(fake.application.screen, { width: 640, height: 480 });
+    const resized = snapshot({ width: 20, height: 12, foods: initial.foods });
+    expect(() => renderer.render(resized, resized, 1, 0)).not.toThrow();
+
+    expect(layer.children).toHaveLength(2);
+    expect(layer.children[0]).toBe(firstVisual);
+    expect(firstVisual.position.x).not.toBe(initialX);
+    expect((firstVisual.children[2] as Graphics).getLocalBounds().width)
+      .not.toBe(initialOuterWidth);
     renderer.destroy();
   });
 

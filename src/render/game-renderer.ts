@@ -59,6 +59,15 @@ interface SegmentPair {
   readonly pixel: MutablePoint;
 }
 
+interface FoodVisual {
+  readonly container: Container;
+  readonly core: Graphics;
+  readonly outer: Graphics;
+  readonly firstRing: Graphics;
+  readonly secondRing: Graphics;
+  readonly pixel: MutablePoint;
+}
+
 export function calculateBoardLayout(
   screenWidth: number,
   screenHeight: number,
@@ -139,17 +148,12 @@ export class GameRenderer implements RendererPort {
   private backgroundGraphic!: Graphics;
   private boardGraphic!: Graphics;
   private gridGraphic!: Graphics;
-  private foodContainer!: Container;
-  private foodCoreGraphic!: Graphics;
-  private foodOuterGraphic!: Graphics;
-  private foodFirstPulseGraphic!: Graphics;
-  private foodSecondPulseGraphic!: Graphics;
   private speedRing!: Graphics;
   private flash!: Graphics;
   private headEyes!: Graphics;
   private readonly glitchSlices: Graphics[] = [];
   private readonly segments: SegmentPair[] = [];
-  private readonly foodPixel = { x: 0, y: 0 };
+  private readonly foodVisuals: FoodVisual[] = [];
   private readonly eventLogical = { x: 0, y: 0 };
   private readonly eventPixel = { x: 0, y: 0 };
   private particlePool: ParticlePool | null = null;
@@ -285,7 +289,7 @@ export class GameRenderer implements RendererPort {
     }
 
     this.drawSnake(previous, current, alpha);
-    this.drawFood(current);
+    this.drawFoods(current);
     this.drawEffects();
     this.app.render();
   }
@@ -391,6 +395,7 @@ export class GameRenderer implements RendererPort {
     }
 
     this.segments.length = 0;
+    this.foodVisuals.length = 0;
     this.glitchSlices.length = 0;
     this.layout = null;
     this.screenWidth = -1;
@@ -439,11 +444,6 @@ export class GameRenderer implements RendererPort {
     this.backgroundGraphic = new Graphics();
     this.boardGraphic = new Graphics();
     this.gridGraphic = new Graphics();
-    this.foodContainer = new Container();
-    this.foodCoreGraphic = new Graphics();
-    this.foodOuterGraphic = new Graphics();
-    this.foodFirstPulseGraphic = new Graphics();
-    this.foodSecondPulseGraphic = new Graphics();
     this.speedRing = new Graphics();
     this.flash = new Graphics();
     this.headEyes = new Graphics();
@@ -451,13 +451,6 @@ export class GameRenderer implements RendererPort {
     this.boardLayer.addChild(this.boardGraphic);
     this.gridLayer.addChild(this.gridGraphic);
     this.snakeLayer.addChild(this.headEyes);
-    this.foodContainer.addChild(
-      this.foodFirstPulseGraphic,
-      this.foodSecondPulseGraphic,
-      this.foodOuterGraphic,
-      this.foodCoreGraphic,
-    );
-    this.foodLayer.addChild(this.foodContainer);
     this.impactLayer.addChild(this.speedRing, this.flash);
 
     for (let index = 0; index < 6; index += 1) {
@@ -699,29 +692,67 @@ export class GameRenderer implements RendererPort {
       return;
     }
 
+    for (const visual of this.foodVisuals) {
+      this.redrawFoodVisual(visual);
+    }
+  }
+
+  private redrawFoodVisual(visual: FoodVisual): void {
+    if (!this.layout) {
+      return;
+    }
+
     const core = this.layout.cell * 0.11;
     const outer = this.layout.cell * 0.23;
-    this.foodCoreGraphic
+    visual.core
       .clear()
       .circle(0, 0, core)
       .fill(THEME.white);
-    this.foodOuterGraphic
+    visual.outer
       .clear()
       .circle(0, 0, outer)
       .stroke({
-        color: THEME.food,
+        color: THEME.white,
         alpha: 0.92,
         width: Math.max(1.5, this.layout.cell * 0.07),
       });
-    this.foodFirstPulseGraphic
+    visual.firstRing
       .clear()
       .circle(0, 0, this.layout.cell)
-      .stroke({ color: THEME.food, alpha: 1, width: 1.5 });
-    this.foodSecondPulseGraphic
+      .stroke({ color: THEME.white, alpha: 1, width: 1.5 });
+    visual.secondRing
       .clear()
       .circle(0, 0, this.layout.cell)
-      .stroke({ color: THEME.magenta, alpha: 1, width: 1 });
-    this.foodContainer.visible = false;
+      .stroke({ color: THEME.white, alpha: 1, width: 1 });
+  }
+
+  private ensureFoodVisualCount(count: number): void {
+    if (!this.layout) {
+      return;
+    }
+
+    while (this.foodVisuals.length < count) {
+      const container = new Container();
+      const firstRing = new Graphics();
+      const secondRing = new Graphics();
+      const outer = new Graphics();
+      const core = new Graphics();
+      firstRing.blendMode = 'add';
+      secondRing.blendMode = 'add';
+      container.addChild(firstRing, secondRing, outer, core);
+      container.visible = false;
+      this.foodLayer.addChild(container);
+      const visual = {
+        container,
+        core,
+        outer,
+        firstRing,
+        secondRing,
+        pixel: { x: 0, y: 0 },
+      };
+      this.foodVisuals.push(visual);
+      this.redrawFoodVisual(visual);
+    }
   }
 
   private ensureSegmentCount(count: number): void {
@@ -841,23 +872,56 @@ export class GameRenderer implements RendererPort {
     this.headEyes.visible = true;
   }
 
-  private drawFood(snapshot: GameSnapshot): void {
-    const food = snapshot.foods[0];
-    if (!this.layout || !food) {
-      this.foodContainer.visible = false;
+  private drawFoods(snapshot: GameSnapshot): void {
+    if (!this.layout) {
       return;
     }
 
-    this.cellToPixel(food, this.foodPixel);
+    this.ensureFoodVisualCount(snapshot.foods.length);
     const pulseTime = this.reducedMotion ? 0 : this.elapsedMs;
     const firstPulse = (Math.sin(pulseTime * 0.006) + 1) / 2;
     const secondPulse = (Math.sin(pulseTime * 0.006 + Math.PI) + 1) / 2;
-    this.foodContainer.position.set(this.foodPixel.x, this.foodPixel.y);
-    this.foodFirstPulseGraphic.scale.set(0.3 + firstPulse * 0.12);
-    this.foodFirstPulseGraphic.alpha = 0.44 * (1 - firstPulse);
-    this.foodSecondPulseGraphic.scale.set(0.36 + secondPulse * 0.12);
-    this.foodSecondPulseGraphic.alpha = 0.32 * (1 - secondPulse);
-    this.foodContainer.visible = true;
+    const bonusPhase = (this.elapsedMs % 1_400) / 1_400;
+    const secondBonusPhase = (bonusPhase + 0.5) % 1;
+
+    for (let index = 0; index < snapshot.foods.length; index += 1) {
+      const food = snapshot.foods[index]!;
+      const visual = this.foodVisuals[index]!;
+      const tint = food.kind === 'bonus' ? THEME.bonusFood : THEME.food;
+      this.cellToPixel(food, visual.pixel);
+      visual.container.position.set(visual.pixel.x, visual.pixel.y);
+      visual.outer.tint = tint;
+      visual.firstRing.tint = tint;
+      visual.secondRing.tint = tint;
+
+      if (food.kind === 'bonus') {
+        if (this.reducedMotion) {
+          visual.firstRing.scale.set(0.58);
+          visual.firstRing.alpha = 0.5;
+          visual.secondRing.scale.set(0.78);
+          visual.secondRing.alpha = 0.3;
+        } else {
+          visual.firstRing.scale.set(0.3 + bonusPhase * 0.8);
+          visual.firstRing.alpha = 0.62 * (1 - bonusPhase);
+          visual.secondRing.scale.set(0.3 + secondBonusPhase * 0.8);
+          visual.secondRing.alpha = 0.5 * (1 - secondBonusPhase);
+        }
+      } else {
+        visual.firstRing.scale.set(0.3 + firstPulse * 0.12);
+        visual.firstRing.alpha = 0.44 * (1 - firstPulse);
+        visual.secondRing.scale.set(0.36 + secondPulse * 0.12);
+        visual.secondRing.alpha = 0.32 * (1 - secondPulse);
+      }
+      visual.container.visible = true;
+    }
+
+    for (
+      let index = snapshot.foods.length;
+      index < this.foodVisuals.length;
+      index += 1
+    ) {
+      this.foodVisuals[index]!.container.visible = false;
+    }
   }
 
   private emitFoodParticles(at: Point): void {
