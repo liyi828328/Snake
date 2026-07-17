@@ -15,6 +15,17 @@ import {
 } from './config';
 import { SnakeEngine } from './engine';
 import { spawnFood } from './food';
+import type { FoodSpawner, Point } from './types';
+
+function scriptedFoodSpawner(...points: Point[]): FoodSpawner {
+  const queue = points.map(({ x, y }) => ({ x, y }));
+  return (occupied, width, height) => queue.shift() ?? spawnFood(occupied, width, height, () => 0);
+}
+
+function finiteFoodSpawner(...points: Point[]): FoodSpawner {
+  const queue = points.map(({ x, y }) => ({ x, y }));
+  return () => queue.shift() ?? null;
+}
 
 describe('速度配置', () => {
   it('食物数量很大时仍不会低于最低间隔', () => {
@@ -98,6 +109,19 @@ describe('食物生成', () => {
 });
 
 describe('游戏初始化与移动', () => {
+  it('默认使用 40×24 棋盘并生成六个不重叠蛇身的普通食物', () => {
+    const snapshot = new SnakeEngine({ random: () => 0 }).snapshot();
+    const positions = snapshot.foods.map(({ x, y }) => `${x},${y}`);
+
+    expect(snapshot).toMatchObject({ width: 40, height: 24 });
+    expect(snapshot.foods).toHaveLength(6);
+    expect(snapshot.foods.every(({ kind }) => kind === 'normal')).toBe(true);
+    expect(new Set(positions).size).toBe(6);
+    expect(snapshot.foods.every((food) => (
+      snapshot.body.every(({ x, y }) => x !== food.x || y !== food.y)
+    ))).toBe(true);
+  });
+
   it('以四节身体就绪，开始后向右移动一格', () => {
     const engine = new SnakeEngine({ width: 14, height: 10, random: () => 0 });
 
@@ -148,12 +172,46 @@ describe('游戏初始化与移动', () => {
 });
 
 describe('进食与速度', () => {
-  it('连续吃五个食物后增长、计分并提升一级速度', () => {
-    const foods = [8, 9, 10, 11, 12].map((x) => ({ x, y: 5 }));
+  it('吃掉任意普通食物后增长计分并立即补足六个普通食物', () => {
+    const refill = { x: 5, y: 0 };
     const engine = new SnakeEngine({
       width: 14,
       height: 10,
-      foodSpawner: () => foods.shift() ?? { x: 0, y: 0 },
+      foodSpawner: scriptedFoodSpawner(
+        { x: 8, y: 5 },
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+        { x: 3, y: 0 },
+        { x: 4, y: 0 },
+        refill,
+      ),
+    });
+    engine.start();
+
+    expect(engine.step()).toEqual([
+      { type: 'foodEaten', at: { x: 8, y: 5 }, score: 10 },
+    ]);
+    const snapshot = engine.snapshot();
+    expect(snapshot.body).toHaveLength(5);
+    expect(snapshot.foods).toHaveLength(6);
+    expect(snapshot.foods.every(({ kind }) => kind === 'normal')).toBe(true);
+    expect(snapshot.foods).toContainEqual({ ...refill, kind: 'normal' });
+  });
+
+  it('连续吃五个食物后增长、计分并提升一级速度', () => {
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      foodSpawner: scriptedFoodSpawner(
+        ...[8, 9, 10, 11, 12].map((x) => ({ x, y: 5 })),
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+        { x: 3, y: 0 },
+        { x: 4, y: 0 },
+        { x: 5, y: 0 },
+      ),
     });
     engine.start();
 
@@ -177,7 +235,7 @@ describe('进食与速度', () => {
 
   it('吃满五格棋盘后完成游戏并清空食物', () => {
     const engine = new SnakeEngine({ width: 5, height: 1, random: () => 0 });
-    expect(engine.snapshot().food).toEqual({ x: 4, y: 0 });
+    expect(engine.snapshot().foods).toEqual([{ x: 4, y: 0, kind: 'normal' }]);
     engine.start();
 
     expect(engine.step()).toEqual([
@@ -186,14 +244,14 @@ describe('进食与速度', () => {
     ]);
     expect(engine.snapshot()).toMatchObject({
       status: 'completed',
-      food: null,
+      foods: [],
       score: 10,
     });
     expect(engine.snapshot().body).toHaveLength(5);
   });
 
   it('第十次进食恰好通关时只报告进食与通关事件', () => {
-    const foods = [
+    const foods: Point[] = [
       { x: 4, y: 1 },
       { x: 5, y: 1 },
       { x: 6, y: 1 },
@@ -208,7 +266,7 @@ describe('进食与速度', () => {
     const engine = new SnakeEngine({
       width: 7,
       height: 2,
-      foodSpawner: () => foods.shift() ?? null,
+      foodSpawner: finiteFoodSpawner(...foods),
     });
     engine.start();
 
@@ -228,7 +286,7 @@ describe('进食与速度', () => {
     ]);
     expect(engine.snapshot()).toMatchObject({
       status: 'completed',
-      food: null,
+      foods: [],
       foodCount: 10,
     });
   });
@@ -247,14 +305,19 @@ describe('碰撞判定', () => {
   });
 
   it('蛇头撞到自身时结束游戏', () => {
-    const foods = [
-      { x: 8, y: 5 },
-      { x: 9, y: 5 },
-    ];
     const engine = new SnakeEngine({
       width: 14,
       height: 10,
-      foodSpawner: () => foods.shift() ?? { x: 0, y: 0 },
+      foodSpawner: scriptedFoodSpawner(
+        { x: 8, y: 5 },
+        { x: 9, y: 5 },
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+        { x: 3, y: 0 },
+        { x: 4, y: 0 },
+        { x: 5, y: 0 },
+      ),
     });
     engine.start();
     engine.step();
@@ -298,15 +361,14 @@ describe('状态控制', () => {
   });
 
   it('暂停时冻结步进并可从暂停状态重新开始', () => {
-    const foods = [
-      { x: 8, y: 5 },
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-    ];
     const engine = new SnakeEngine({
       width: 14,
       height: 10,
-      foodSpawner: () => foods.shift() ?? null,
+      foodSpawner: finiteFoodSpawner(
+        { x: 8, y: 5 },
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+      ),
     });
     engine.start();
     engine.step();
@@ -370,7 +432,8 @@ describe('快照与构造边界', () => {
     expect(Object.isFrozen(first)).toBe(true);
     expect(Object.isFrozen(first.body)).toBe(true);
     expect(first.body.every(Object.isFrozen)).toBe(true);
-    expect(Object.isFrozen(first.food)).toBe(true);
+    expect(Object.isFrozen(first.foods)).toBe(true);
+    expect(first.foods.every(Object.isFrozen)).toBe(true);
   });
 
   it('仅在状态、方向或蛇身实际变化后生成新快照', () => {
@@ -410,7 +473,7 @@ describe('快照与构造边界', () => {
     const engine = new SnakeEngine({ width: 14, height: 10, random: () => 0 });
     const snapshot = engine.snapshot();
     const exposedBody = snapshot.body as Array<{ x: number; y: number }>;
-    const exposedFood = snapshot.food as { x: number; y: number };
+    const exposedFoods = snapshot.foods as Array<{ x: number; y: number; kind: string }>;
 
     expect(() => {
       exposedBody[0]!.x = 99;
@@ -419,7 +482,10 @@ describe('快照与构造边界', () => {
       exposedBody.push({ x: 98, y: 98 });
     }).toThrow(TypeError);
     expect(() => {
-      exposedFood.x = 97;
+      exposedFoods[0]!.x = 97;
+    }).toThrow(TypeError);
+    expect(() => {
+      exposedFoods.push({ x: 96, y: 96, kind: 'normal' });
     }).toThrow(TypeError);
 
     expect(engine.snapshot().body).toEqual([
@@ -428,7 +494,7 @@ describe('快照与构造边界', () => {
       { x: 5, y: 5 },
       { x: 4, y: 5 },
     ]);
-    expect(engine.snapshot().food).toEqual({ x: 0, y: 0 });
+    expect(engine.snapshot().foods[0]).toEqual({ x: 0, y: 0, kind: 'normal' });
   });
 
   it('拒绝无法容纳初始蛇和食物的棋盘尺寸', () => {
@@ -471,35 +537,40 @@ describe('快照与构造边界', () => {
     const engine = new SnakeEngine({
       width: 14,
       height: 10,
-      foodSpawner: () => externalFood,
+      foodSpawner: finiteFoodSpawner(externalFood),
     });
 
     externalFood.x = 1;
     externalFood.y = 1;
 
-    expect(engine.snapshot().food).toEqual({ x: 0, y: 0 });
+    expect(engine.snapshot().foods).toEqual([{ x: 0, y: 0, kind: 'normal' }]);
   });
 
   it('进食后复制食物生成器再次返回的坐标', () => {
     const first = { x: 8, y: 5 };
     const externalNext = { x: 0, y: 0 };
-    const foods = [first, externalNext];
     const engine = new SnakeEngine({
       width: 14,
       height: 10,
-      foodSpawner: () => foods.shift() ?? null,
+      foodSpawner: finiteFoodSpawner(
+        first,
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+        { x: 3, y: 0 },
+        { x: 4, y: 0 },
+        { x: 5, y: 0 },
+        externalNext,
+      ),
     });
     engine.start();
 
     expect(engine.step()).toEqual([
       { type: 'foodEaten', at: { x: 8, y: 5 }, score: 10 },
     ]);
-    expect(foods).toHaveLength(0);
-
     externalNext.x = 1;
     externalNext.y = 1;
 
-    expect(engine.snapshot().food).toEqual({ x: 0, y: 0 });
+    expect(engine.snapshot().foods).toContainEqual({ x: 0, y: 0, kind: 'normal' });
   });
 
   it.each([
@@ -508,16 +579,33 @@ describe('快照与构造边界', () => {
     ['小数', { x: 0.5, y: 0 }, '食物坐标必须为安全整数'],
   ])('进食后拒绝生成%s坐标的食物', (_caseName, nextFood, expectedError) => {
     const first = { x: 8, y: 5 };
-    const foods = [first, nextFood];
     const engine = new SnakeEngine({
       width: 14,
       height: 10,
-      foodSpawner: () => foods.shift() ?? null,
+      foodSpawner: finiteFoodSpawner(
+        first,
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+        { x: 3, y: 0 },
+        { x: 4, y: 0 },
+        nextFood,
+      ),
     });
     engine.start();
 
     expect(() => engine.step()).toThrow(expectedError);
-    expect(foods).toHaveLength(0);
+  });
+
+  it('拒绝食物生成器返回与已有食物重叠的坐标', () => {
+    expect(() => new SnakeEngine({
+      width: 14,
+      height: 10,
+      foodSpawner: finiteFoodSpawner(
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+      ),
+    })).toThrow('食物不能与已有食物重叠');
   });
 
   it.each([

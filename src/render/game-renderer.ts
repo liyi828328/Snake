@@ -817,12 +817,13 @@ export class GameRenderer implements RendererPort {
   }
 
   private drawFood(snapshot: GameSnapshot): void {
-    if (!this.layout || snapshot.food === null) {
+    const food = snapshot.foods[0];
+    if (!this.layout || !food) {
       this.foodContainer.visible = false;
       return;
     }
 
-    this.cellToPixel(snapshot.food, this.foodPixel);
+    this.cellToPixel(food, this.foodPixel);
     const pulseTime = this.reducedMotion ? 0 : this.elapsedMs;
     const firstPulse = (Math.sin(pulseTime * 0.006) + 1) / 2;
     const secondPulse = (Math.sin(pulseTime * 0.006 + Math.PI) + 1) / 2;

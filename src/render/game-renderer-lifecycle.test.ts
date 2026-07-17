@@ -124,7 +124,7 @@ function snapshot(): GameSnapshot {
     width: 32,
     height: 24,
     body: [{ x: 2, y: 3 }],
-    food: { x: 10, y: 8 },
+    foods: [{ x: 10, y: 8, kind: 'normal' }],
     direction: 'right',
     status: 'playing',
     score: 0,

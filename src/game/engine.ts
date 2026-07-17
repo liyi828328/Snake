@@ -5,6 +5,7 @@ import {
   INITIAL_LENGTH,
   MAX_BOARD_CELLS,
   MAX_DIRECTION_QUEUE,
+  NORMAL_FOOD_TARGET,
   OPPOSITE,
   SCORE_PER_FOOD,
   SPEED_UP_EVERY_FOOD,
@@ -13,6 +14,8 @@ import {
 import { spawnFood } from './food';
 import type {
   Direction,
+  Food,
+  FoodKind,
   FoodSpawner,
   GameEvent,
   GameSnapshot,
@@ -34,7 +37,7 @@ export class SnakeEngine {
   private readonly random: RandomSource;
   private readonly foodSpawner: FoodSpawner;
   private body: Point[] = [];
-  private food: Point | null = null;
+  private foods: Food[] = [];
   private direction: Direction = 'right';
   private status: GameStatus = 'ready';
   private score = 0;
@@ -80,30 +83,45 @@ export class SnakeEngine {
     this.score = 0;
     this.foodCount = 0;
     this.directionQueue = [];
-    this.food = this.nextFood();
+    this.foods = [];
+    this.fillNormalFoods();
   }
 
-  private nextFood(): Point | null {
+  private fillNormalFoods(): void {
+    while (this.foods.filter(({ kind }) => kind === 'normal').length < NORMAL_FOOD_TARGET) {
+      const food = this.nextFood('normal');
+      if (food === null) {
+        return;
+      }
+      this.foods.push(food);
+    }
+  }
+
+  private nextFood(kind: FoodKind): Food | null {
     return this.validateFood(
-      this.foodSpawner(this.body, this.width, this.height, this.random),
+      this.foodSpawner([...this.body, ...this.foods], this.width, this.height, this.random),
+      kind,
     );
   }
 
-  private validateFood(food: Point | null): Point | null {
-    if (food === null) {
+  private validateFood(point: Point | null, kind: FoodKind): Food | null {
+    if (point === null) {
       return null;
     }
-    if (!Number.isSafeInteger(food.x) || !Number.isSafeInteger(food.y)) {
+    if (!Number.isSafeInteger(point.x) || !Number.isSafeInteger(point.y)) {
       throw new Error('食物坐标必须为安全整数');
     }
-    if (food.x < 0 || food.x >= this.width || food.y < 0 || food.y >= this.height) {
+    if (point.x < 0 || point.x >= this.width || point.y < 0 || point.y >= this.height) {
       throw new Error('食物坐标必须在棋盘内');
     }
-    if (this.body.some(({ x, y }) => x === food.x && y === food.y)) {
+    if (this.body.some(({ x, y }) => x === point.x && y === point.y)) {
       throw new Error('食物不能生成在蛇身上');
     }
+    if (this.foods.some(({ x, y }) => x === point.x && y === point.y)) {
+      throw new Error('食物不能与已有食物重叠');
+    }
 
-    return { x: food.x, y: food.y };
+    return { x: point.x, y: point.y, kind };
   }
 
   snapshot(): GameSnapshot {
@@ -114,14 +132,14 @@ export class SnakeEngine {
     const body = Object.freeze(
       this.body.map(({ x, y }) => Object.freeze({ x, y })),
     );
-    const food = this.food === null
-      ? null
-      : Object.freeze({ x: this.food.x, y: this.food.y });
+    const foods = Object.freeze(
+      this.foods.map(({ x, y, kind }) => Object.freeze({ x, y, kind })),
+    );
     this.cachedSnapshot = Object.freeze({
       width: this.width,
       height: this.height,
       body,
-      food,
+      foods,
       direction: this.direction,
       status: this.status,
       score: this.score,
@@ -188,9 +206,10 @@ export class SnakeEngine {
     const head = this.body[0]!;
     const vector = DIRECTION_VECTOR[this.direction];
     const nextHead = { x: head.x + vector.x, y: head.y + vector.y };
-    const ateFood = this.food !== null
-      && nextHead.x === this.food.x
-      && nextHead.y === this.food.y;
+    const eatenIndex = this.foods.findIndex(({ x, y }) => (
+      nextHead.x === x && nextHead.y === y
+    ));
+    const ateFood = eatenIndex !== -1;
     const collisionBody = ateFood ? this.body : this.body.slice(0, -1);
     const hitWall = nextHead.x < 0
       || nextHead.x >= this.width
@@ -212,16 +231,17 @@ export class SnakeEngine {
 
     this.foodCount += 1;
     this.score += SCORE_PER_FOOD;
+    this.foods.splice(eatenIndex, 1);
     const events: GameEvent[] = [
       { type: 'foodEaten', at: { ...nextHead }, score: this.score },
     ];
     if (this.body.length === this.width * this.height) {
-      this.food = null;
+      this.foods = [];
       this.status = 'completed';
       events.push({ type: 'completed', score: this.score });
       return events;
     }
-    this.food = this.nextFood();
+    this.fillNormalFoods();
 
     if (this.foodCount % SPEED_UP_EVERY_FOOD === 0) {
       events.push({

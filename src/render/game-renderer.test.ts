@@ -17,7 +17,7 @@ function snapshot(body: GameSnapshot['body']): GameSnapshot {
     width: 32,
     height: 24,
     body,
-    food: { x: 10, y: 8 },
+    foods: [{ x: 10, y: 8, kind: 'normal' }],
     direction: 'right',
     status: 'playing',
     score: 0,

@@ -149,7 +149,11 @@ function createHarness(options: {
   preferences?: Preferences;
   now?: () => number;
 } = {}): Harness {
-  const engine = options.engine ?? new SnakeEngine({ width: 14, height: 10 });
+  const engine = options.engine ?? new SnakeEngine({
+    width: 14,
+    height: 10,
+    random: () => 0,
+  });
   const renderer = new FakeRenderer();
   const hud = new FakeHud();
   const store = new FakeStore(options.preferences);
@@ -430,7 +434,15 @@ describe('游戏控制器', () => {
   });
 
   it('150ms 帧推进一次并把事件批量交给渲染器和音频', () => {
-    const foods = [{ x: 5, y: 2 }, { x: 0, y: 0 }];
+    const foods = [
+      { x: 5, y: 2 },
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+      { x: 5, y: 0 },
+    ];
     const engine = new SnakeEngine({
       width: 8,
       height: 4,
@@ -542,7 +554,15 @@ describe('游戏控制器', () => {
   });
 
   it('分数超过最高分时在当前帧立即写入偏好', () => {
-    const foods = [{ x: 5, y: 2 }, { x: 0, y: 0 }];
+    const foods = [
+      { x: 5, y: 2 },
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+      { x: 5, y: 0 },
+    ];
     const engine = new SnakeEngine({
       width: 8,
       height: 4,

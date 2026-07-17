@@ -17,7 +17,7 @@ export interface GameSnapshot {
   readonly width: number;
   readonly height: number;
   readonly body: readonly Point[];
-  readonly food: Point | null;
+  readonly foods: readonly Food[];
   readonly direction: Direction;
   readonly status: GameStatus;
   readonly score: number;

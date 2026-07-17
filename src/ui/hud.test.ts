@@ -13,10 +13,10 @@ function snapshot(
   overrides: Partial<GameSnapshot> = {},
 ): GameSnapshot {
   return {
-    width: 32,
+    width: 40,
     height: 24,
     body: [{ x: 4, y: 4 }],
-    food: { x: 8, y: 8 },
+    foods: [{ x: 8, y: 8, kind: 'normal' }],
     direction: 'right',
     status,
     score: 0,
