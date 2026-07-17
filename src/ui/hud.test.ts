@@ -202,13 +202,14 @@ describe('HUD', () => {
     expect(styles).not.toMatch(/\.arena\s*\{[^}]*min-height:/s);
   });
 
-  it('游戏框宽度同时受 vh 与 dvh 高度限制并在矮视口压缩 HUD 和页脚', () => {
+  it('游戏框扩展到 1280px、维持 5:3 场地并在矮视口压缩 HUD 和页脚', () => {
     expect(styles).toContain(
-      'width: min(1100px, 100%, max(240px, calc(133.333vh - 346.667px)));',
+      'width: min(1280px, 100%, max(240px, calc(166.667vh - 433.333px)));',
     );
     expect(styles).toContain(
-      'width: min(1100px, 100%, max(240px, calc(133.333dvh - 346.667px)));',
+      'width: min(1280px, 100%, max(240px, calc(166.667dvh - 433.333px)));',
     );
+    expect(styles).toContain('aspect-ratio: 5 / 3;');
     expect(styles).toMatch(
       /@media \(max-height: 760px\)\s*\{[\s\S]*?\.hud\s*\{[^}]*min-height:[^}]*padding:[^}]*\}[\s\S]*?\.game-footer\s*\{[^}]*min-height:[^}]*padding:/,
     );

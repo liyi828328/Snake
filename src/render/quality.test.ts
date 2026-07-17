@@ -170,7 +170,7 @@ describe('自适应视觉质量', () => {
     expect(fastGovernor.level).toBe('high');
   });
 
-  it('提供霓虹主题色与三十二乘二十四棋盘尺寸', () => {
+  it('提供不含棋盘尺寸的精确霓虹主题色', () => {
     expect(THEME).toEqual({
       background: 0x020611,
       board: 0x030817,
@@ -178,10 +178,9 @@ describe('自适应视觉质量', () => {
       cyan: 0x45f4ff,
       magenta: 0xe45bff,
       food: 0xff3b8d,
+      bonusFood: 0xffd166,
       white: 0xf1ffff,
       gridAlpha: 0.075,
-      boardColumns: 32,
-      boardRows: 24,
     });
   });
 });

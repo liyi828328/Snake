@@ -5,8 +5,7 @@ export const THEME = {
   cyan: 0x45f4ff,
   magenta: 0xe45bff,
   food: 0xff3b8d,
+  bonusFood: 0xffd166,
   white: 0xf1ffff,
   gridAlpha: 0.075,
-  boardColumns: 32,
-  boardRows: 24,
 } as const;

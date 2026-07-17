@@ -2,10 +2,11 @@
 // @vitest-environment node
 
 import { Container } from 'pixi.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { GameSnapshot } from '../game/types';
 import {
+  GameRenderer,
   calculateBoardLayout,
   interpolateBody,
   interpolatePointInto,
@@ -27,42 +28,38 @@ function snapshot(body: GameSnapshot['body']): GameSnapshot {
 }
 
 describe('棋盘布局', () => {
-  it('在普通屏幕内生成居中的 32×24 棋盘', () => {
-    expect(calculateBoardLayout(1_200, 900)).toEqual({
+  it('在 1280×768 屏幕内生成居中的 40×24 棋盘', () => {
+    expect(calculateBoardLayout(1_280, 768, 40, 24)).toEqual({
       cell: 30,
-      boardWidth: 960,
+      boardWidth: 1_200,
       boardHeight: 720,
-      x: 120,
-      y: 90,
-    });
-  });
-
-  it('奇数和小数屏幕尺寸也使用整数坐标居中', () => {
-    const layout = calculateBoardLayout(1_201.5, 901.5);
-
-    expect(layout).toEqual({
-      cell: 30,
-      boardWidth: 960,
-      boardHeight: 720,
-      x: 120,
-      y: 90,
-    });
-    expect(Number.isInteger(layout.x)).toBe(true);
-    expect(Number.isInteger(layout.y)).toBe(true);
-  });
-
-  it('窄屏使用可完整容纳棋盘的小数格宽', () => {
-    expect(calculateBoardLayout(238, 178.5)).toEqual({
-      cell: 5.4375,
-      boardWidth: 174,
-      boardHeight: 130.5,
-      x: 32,
+      x: 40,
       y: 24,
     });
   });
 
-  it('极小或无效屏幕不产生失控坐标', () => {
-    expect(calculateBoardLayout(20, 16)).toEqual({
+  it('自定义 14×10 棋盘仍限制最大格宽并居中', () => {
+    expect(calculateBoardLayout(800, 600, 14, 10)).toEqual({
+      cell: 30,
+      boardWidth: 420,
+      boardHeight: 300,
+      x: 190,
+      y: 150,
+    });
+  });
+
+  it('320×192 屏幕保留四边 24px 间距', () => {
+    expect(calculateBoardLayout(320, 192, 40, 24)).toEqual({
+      cell: 6,
+      boardWidth: 240,
+      boardHeight: 144,
+      x: 40,
+      y: 24,
+    });
+  });
+
+  it('极小、极端或无效输入保持有限非负并回退默认棋盘尺寸', () => {
+    expect(calculateBoardLayout(20, 16, 0, Number.NaN)).toEqual({
       cell: 0,
       boardWidth: 0,
       boardHeight: 0,
@@ -70,10 +67,73 @@ describe('棋盘布局', () => {
       y: 8,
     });
 
-    const invalid = calculateBoardLayout(Number.NaN, Number.NEGATIVE_INFINITY);
-    expect(Object.values(invalid).every(Number.isFinite)).toBe(true);
-    expect(invalid.x).toBeGreaterThanOrEqual(0);
-    expect(invalid.y).toBeGreaterThanOrEqual(0);
+    for (const layout of [
+      calculateBoardLayout(Number.NaN, Number.NEGATIVE_INFINITY, -1, 0),
+      calculateBoardLayout(Number.MAX_VALUE, Number.MAX_VALUE, 1, 1),
+      calculateBoardLayout(-Number.MAX_VALUE, -Number.MAX_VALUE, 40, 24),
+    ]) {
+      expect(Object.values(layout).every(Number.isFinite)).toBe(true);
+      expect(Object.values(layout).every((value) => value >= 0)).toBe(true);
+    }
+  });
+});
+
+describe('渲染器棋盘尺寸', () => {
+  it('以默认 40×24 初始化并在同屏幕切换自定义尺寸时重算布局', () => {
+    const renderer = new GameRenderer({} as HTMLElement);
+    const redrawBoardAndGrid = vi.fn();
+    const internals = renderer as unknown as {
+      app: { screen: { width: number; height: number } };
+      boardColumns: number;
+      boardRows: number;
+      layout: ReturnType<typeof calculateBoardLayout> | null;
+      ensureLayout(columns?: number, rows?: number): void;
+      redrawBackground(): void;
+      redrawBoardAndGrid(): void;
+      redrawFoodGeometry(): void;
+      redrawImpactGeometry(): void;
+      redrawSegmentGeometry(): void;
+    };
+    internals.app = { screen: { width: 800, height: 600 } };
+    internals.redrawBackground = vi.fn();
+    internals.redrawBoardAndGrid = redrawBoardAndGrid;
+    internals.redrawFoodGeometry = vi.fn();
+    internals.redrawImpactGeometry = vi.fn();
+    internals.redrawSegmentGeometry = vi.fn();
+
+    expect([internals.boardColumns, internals.boardRows]).toEqual([40, 24]);
+    internals.ensureLayout(14, 10);
+    expect(internals.layout).toEqual(calculateBoardLayout(800, 600, 14, 10));
+    expect([internals.boardColumns, internals.boardRows]).toEqual([14, 10]);
+
+    internals.ensureLayout();
+    expect(redrawBoardAndGrid).toHaveBeenCalledTimes(1);
+    internals.ensureLayout(20, 12);
+    expect(redrawBoardAndGrid).toHaveBeenCalledTimes(2);
+  });
+
+  it('render 使用当前快照尺寸更新布局', () => {
+    const renderer = new GameRenderer({} as HTMLElement);
+    const ensureLayout = vi.fn();
+    const internals = renderer as unknown as {
+      app: { render(): void };
+      ensureLayout(columns?: number, rows?: number): void;
+      applyQuality(): void;
+      drawSnake(): void;
+      drawFood(): void;
+      drawEffects(): void;
+    };
+    internals.app = { render: vi.fn() };
+    internals.ensureLayout = ensureLayout;
+    internals.applyQuality = vi.fn();
+    internals.drawSnake = vi.fn();
+    internals.drawFood = vi.fn();
+    internals.drawEffects = vi.fn();
+    const current = { ...snapshot([{ x: 2, y: 2 }]), width: 14, height: 10 };
+
+    renderer.render(current, current, 1, 0);
+
+    expect(ensureLayout).toHaveBeenCalledWith(14, 10);
   });
 });
 

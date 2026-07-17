@@ -102,8 +102,8 @@ button {
   position: relative;
   isolation: isolate;
   container-type: inline-size;
-  width: min(1100px, 100%, max(240px, calc(133.333vh - 346.667px)));
-  width: min(1100px, 100%, max(240px, calc(133.333dvh - 346.667px)));
+  width: min(1280px, 100%, max(240px, calc(166.667vh - 433.333px)));
+  width: min(1280px, 100%, max(240px, calc(166.667dvh - 433.333px)));
   overflow: hidden;
   border: 1px solid rgba(56, 248, 255, 0.68);
   border-radius: 18px;
@@ -216,7 +216,7 @@ button {
 .arena {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 5 / 3;
   overflow: hidden;
   background:
     radial-gradient(circle at center, rgba(12, 50, 82, 0.42), transparent 70%),

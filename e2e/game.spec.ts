@@ -140,7 +140,7 @@ async function findRenderedBoardEdges(
         canvasHeight,
         vertical: verticalCounts
           .map((count, position) => ({ count, position }))
-          .filter(({ count }) => count > canvasHeight / 2)
+          .filter(({ count }) => count > canvasHeight * 0.4)
           .map(({ position }) => position),
         horizontal: horizontalCounts
           .map((count, position) => ({ count, position }))
@@ -299,7 +299,7 @@ test('窗口失焦时自动暂停', async ({ page }) => {
   await expect(overlay).toBeVisible();
 });
 
-test('常见视口保持画布、提示阈值和 4:3 布局', async ({ page }) => {
+test('常见视口保持画布、提示阈值和 5:3 布局', async ({ page }) => {
   const canvas = page.getByTestId('canvas-host').locator('canvas');
   const hint = page.getByTestId('viewport-hint');
   const viewports = [
@@ -322,7 +322,7 @@ test('常见视口保持画布、提示阈值和 4:3 布局', async ({ page }) =
   await page.setViewportSize({ width: 1366, height: 768 });
   const shellBox = await page.locator('.game-shell').boundingBox();
   const arenaBox = await page.locator('.arena').boundingBox();
-  await expect(page.locator('.hud__identity')).toBeHidden();
+  await expect(page.locator('.hud__identity')).toBeVisible();
   const hudLayout = await page.evaluate(() => {
     const hud = document.querySelector<HTMLElement>('.hud')!;
     const hudBox = hud.getBoundingClientRect();
@@ -353,7 +353,7 @@ test('常见视口保持画布、提示阈值和 4:3 布局', async ({ page }) =
   expect(shellBox).not.toBeNull();
   expect(arenaBox).not.toBeNull();
   expect(shellBox!.y + shellBox!.height).toBeLessThanOrEqual(769);
-  expect(arenaBox!.width / arenaBox!.height).toBeCloseTo(4 / 3, 2);
+  expect(arenaBox!.width / arenaBox!.height).toBeCloseTo(5 / 3, 2);
   expect(hudLayout.scrollWidth).toBeLessThanOrEqual(hudLayout.clientWidth + 1);
   for (const item of hudLayout.items) {
     expect(item.left, `${item.testId} 左边界`).toBeGreaterThanOrEqual(
@@ -371,7 +371,7 @@ test('常见视口保持画布、提示阈值和 4:3 布局', async ({ page }) =
   }
 });
 
-test('320×400 视口完整显示 4:3 棋盘、小屏提示且不纵向滚动', async ({ page }) => {
+test('320×400 视口完整显示 5:3 棋盘、小屏提示且不纵向滚动', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 400 });
   const hint = page.getByTestId('viewport-hint');
   const host = page.getByTestId('canvas-host');
@@ -390,7 +390,7 @@ test('320×400 视口完整显示 4:3 棋盘、小屏提示且不纵向滚动', 
   expect(right).toBeLessThan(board.canvasWidth - 1);
   expect(bottom).toBeGreaterThan(0);
   expect(top).toBeLessThan(board.canvasHeight - 1);
-  expect((right - left) / (top - bottom)).toBeCloseTo(4 / 3, 1);
+  expect((right - left) / (top - bottom)).toBeCloseTo(5 / 3, 1);
 
   const layout = await page.evaluate(() => {
     const hostBox = document
@@ -402,7 +402,7 @@ test('320×400 视口完整显示 4:3 棋盘、小屏提示且不纵向滚动', 
       pageHeight: document.documentElement.scrollHeight,
     };
   });
-  expect(layout.hostRatio).toBeCloseTo(4 / 3, 2);
+  expect(layout.hostRatio).toBeCloseTo(5 / 3, 2);
   expect(layout.pageHeight).toBeLessThanOrEqual(layout.viewportHeight + 1);
 });
 

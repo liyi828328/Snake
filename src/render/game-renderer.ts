@@ -5,6 +5,7 @@ import {
   Graphics,
 } from 'pixi.js';
 
+import { DEFAULT_HEIGHT, DEFAULT_WIDTH } from '../game/config';
 import type {
   GameEvent,
   GameSnapshot,
@@ -61,14 +62,25 @@ interface SegmentPair {
 export function calculateBoardLayout(
   screenWidth: number,
   screenHeight: number,
+  columns: number = DEFAULT_WIDTH,
+  rows: number = DEFAULT_HEIGHT,
 ): BoardLayout {
   const safeWidth = Number.isFinite(screenWidth) ? Math.max(0, screenWidth) : 0;
   const safeHeight = Number.isFinite(screenHeight) ? Math.max(0, screenHeight) : 0;
-  const maximumWidth = Math.max(0, Math.min(safeWidth - 48, 960));
+  const safeColumns = Number.isSafeInteger(columns) && columns > 0
+    ? columns
+    : DEFAULT_WIDTH;
+  const safeRows = Number.isSafeInteger(rows) && rows > 0
+    ? rows
+    : DEFAULT_HEIGHT;
+  const maximumWidth = Math.max(0, safeWidth - 48);
   const maximumHeight = Math.max(0, safeHeight - 48);
-  const cell = Math.min(maximumWidth / 32, maximumHeight / 24);
-  const boardWidth = cell * 32;
-  const boardHeight = cell * 24;
+  const cell = Math.max(
+    0,
+    Math.min(30, maximumWidth / safeColumns, maximumHeight / safeRows),
+  );
+  const boardWidth = cell * safeColumns;
+  const boardHeight = cell * safeRows;
 
   return {
     cell,
@@ -145,6 +157,8 @@ export class GameRenderer implements RendererPort {
   private layout: BoardLayout | null = null;
   private screenWidth = -1;
   private screenHeight = -1;
+  private boardColumns = DEFAULT_WIDTH;
+  private boardRows = DEFAULT_HEIGHT;
   private backgroundParticleCount = -1;
   private particleLimit = -1;
   private blurQuality = -1;
@@ -264,7 +278,7 @@ export class GameRenderer implements RendererPort {
       this.governor.sample(validDelta);
     }
     this.applyQuality();
-    this.ensureLayout();
+    this.ensureLayout(current.width, current.height);
 
     if (validDelta > 0) {
       this.advanceEffects(validDelta);
@@ -490,21 +504,32 @@ export class GameRenderer implements RendererPort {
     }
   }
 
-  private ensureLayout(): void {
+  private ensureLayout(
+    columns: number = this.boardColumns,
+    rows: number = this.boardRows,
+  ): void {
     if (!this.app) {
       return;
     }
 
     const width = this.app.screen.width;
     const height = this.app.screen.height;
-    if (width === this.screenWidth && height === this.screenHeight && this.layout) {
+    if (
+      width === this.screenWidth
+      && height === this.screenHeight
+      && columns === this.boardColumns
+      && rows === this.boardRows
+      && this.layout
+    ) {
       return;
     }
 
     const previousCell = this.layout?.cell;
     this.screenWidth = width;
     this.screenHeight = height;
-    this.layout = calculateBoardLayout(width, height);
+    this.boardColumns = columns;
+    this.boardRows = rows;
+    this.layout = calculateBoardLayout(width, height, columns, rows);
     this.redrawBackground();
     this.redrawBoardAndGrid();
     this.redrawFoodGeometry();
@@ -585,13 +610,13 @@ export class GameRenderer implements RendererPort {
     this.drawCornerLocators();
 
     this.gridGraphic.clear();
-    for (let column = 1; column < THEME.boardColumns; column += 1) {
+    for (let column = 1; column < this.boardColumns; column += 1) {
       const x = layout.x + column * layout.cell;
       this.gridGraphic
         .moveTo(x, layout.y)
         .lineTo(x, layout.y + layout.boardHeight);
     }
-    for (let row = 1; row < THEME.boardRows; row += 1) {
+    for (let row = 1; row < this.boardRows; row += 1) {
       const y = layout.y + row * layout.cell;
       this.gridGraphic
         .moveTo(layout.x, y)
@@ -872,7 +897,7 @@ export class GameRenderer implements RendererPort {
     const bursts: ParticleBurst[] = [];
     for (let index = 0; index < count; index += 1) {
       this.eventLogical.x = (index + this.random() * 0.8)
-        / count * THEME.boardColumns - 0.5;
+        / count * this.boardColumns - 0.5;
       this.eventLogical.y = -this.random() * 3 - 0.5;
       this.cellToPixel(this.eventLogical, this.eventPixel);
       bursts.push({
