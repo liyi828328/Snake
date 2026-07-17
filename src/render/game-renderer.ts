@@ -890,6 +890,7 @@ export class GameRenderer implements RendererPort {
       const tint = food.kind === 'bonus' ? THEME.bonusFood : THEME.food;
       this.cellToPixel(food, visual.pixel);
       visual.container.position.set(visual.pixel.x, visual.pixel.y);
+      visual.core.tint = tint;
       visual.outer.tint = tint;
       visual.firstRing.tint = tint;
       visual.secondRing.tint = tint;

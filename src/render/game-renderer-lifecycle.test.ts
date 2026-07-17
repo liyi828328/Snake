@@ -270,6 +270,8 @@ describe('渲染器生命周期', () => {
     expect(foods.filter(({ visible }) => visible)).toHaveLength(2);
     expect((foods[0]!.children[2] as Graphics).tint).toBe(THEME.food);
     expect((foods[1]!.children[2] as Graphics).tint).toBe(THEME.bonusFood);
+    expect((foods[0]!.children[3] as Graphics).tint).toBe(THEME.food);
+    expect((foods[1]!.children[3] as Graphics).tint).toBe(THEME.bonusFood);
     expect(foods[0]!.position.x).not.toBe(foods[1]!.position.x);
     expect(foods[0]!.position.y).not.toBe(foods[1]!.position.y);
 
@@ -287,16 +289,25 @@ describe('渲染器生命周期', () => {
 
     const state = snapshot({ foods: [{ x: 10, y: 8, kind: 'bonus' }] });
     renderer.render(state, state, 1, 0);
-    const firstRing = (
-      foodLayer(fake.application).children[0] as Container
-    ).children[0] as Graphics;
-    const initialScale = firstRing.scale.x;
-    const initialAlpha = firstRing.alpha;
+    const visual = foodLayer(fake.application).children[0] as Container;
+    const firstRing = visual.children[0] as Graphics;
+    const secondRing = visual.children[1] as Graphics;
+    const initialFirstScale = firstRing.scale.x;
+    const initialFirstAlpha = firstRing.alpha;
+    const initialSecondScale = secondRing.scale.x;
+    const initialSecondAlpha = secondRing.alpha;
+
+    expect(initialSecondScale).toBeGreaterThan(initialFirstScale);
+    expect(initialSecondAlpha).toBeLessThan(initialFirstAlpha);
 
     renderer.render(state, state, 1, 350);
 
-    expect(firstRing.scale.x).toBeGreaterThan(initialScale);
-    expect(firstRing.alpha).toBeLessThan(initialAlpha);
+    expect(firstRing.scale.x).toBeGreaterThan(initialFirstScale);
+    expect(firstRing.alpha).toBeLessThan(initialFirstAlpha);
+    expect(secondRing.scale.x).toBeGreaterThan(initialSecondScale);
+    expect(secondRing.alpha).toBeLessThan(initialSecondAlpha);
+    expect(secondRing.scale.x).not.toBe(firstRing.scale.x);
+    expect(secondRing.alpha).not.toBe(firstRing.alpha);
     renderer.destroy();
   });
 
@@ -357,7 +368,7 @@ describe('渲染器生命周期', () => {
     renderer.destroy();
   });
 
-  it('预留十六个食物容器并在后续帧中只切换可见性', async () => {
+  it('首次绘制时按需创建十六个食物容器并在后续帧中复用', async () => {
     const host = createFakeHost();
     const fake = createFakeApplication(Promise.resolve());
     const renderer = new GameRenderer(
@@ -365,6 +376,8 @@ describe('渲染器生命周期', () => {
       rendererOptions(() => fake.application),
     );
     await renderer.init();
+    const layer = foodLayer(fake.application);
+    expect(layer.children).toHaveLength(0);
 
     const sixteenFoods = snapshot({
       foods: Array.from({ length: 16 }, (_, index) => ({
@@ -374,7 +387,6 @@ describe('渲染器生命周期', () => {
       })),
     });
     renderer.render(sixteenFoods, sixteenFoods, 1, 0);
-    const layer = foodLayer(fake.application);
     const visuals = [...layer.children];
 
     const sixFoods = snapshot({ foods: sixteenFoods.foods.slice(0, 6) });
@@ -383,6 +395,12 @@ describe('渲染器生命周期', () => {
 
     expect(layer.children).toHaveLength(16);
     expect(layer.children.filter(({ visible }) => visible)).toHaveLength(6);
+    expect([...layer.children]).toEqual(visuals);
+
+    const noFoods = snapshot({ foods: [] });
+    renderer.render(noFoods, noFoods, 1, 16);
+    expect(layer.children).toHaveLength(16);
+    expect(layer.children.every(({ visible }) => !visible)).toBe(true);
     expect([...layer.children]).toEqual(visuals);
     renderer.destroy();
   });
