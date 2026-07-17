@@ -336,6 +336,53 @@ describe('限时双倍奖励食物', () => {
     expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
   });
 
+  it('单次跨过奖励生成和到期边界时按出现时刻计时', () => {
+    const normalPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 0 }));
+    const firstBonusPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 1 }));
+    const secondBonusPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 2 }));
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: sequenceRandom(0, 0, 0, 0, 0),
+      foodSpawner: scriptedFoodSpawner(
+        ...normalPoints,
+        ...firstBonusPoints,
+        ...secondBonusPoints,
+      ),
+    });
+    engine.start();
+
+    engine.advanceTime(34_999);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+
+    engine.advanceTime(24_999);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    engine.advanceTime(1);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+  });
+
+  it('单次三万五千毫秒后奖励已生成并到期', () => {
+    const points = [
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 0 })),
+      ...Array.from({ length: 6 }, (_, x) => ({ x, y: 1 })),
+    ];
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: sequenceRandom(0, 0, 0),
+      foodSpawner: scriptedFoodSpawner(...points),
+    });
+    engine.start();
+    const before = engine.snapshot();
+
+    engine.advanceTime(35_000);
+    const after = engine.snapshot();
+    expect(after.foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
+    expect(after).toBe(before);
+  });
+
   it('随机数为一时在一百二十秒生成十个奖励食物', () => {
     const normalPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 0 }));
     const bonusPoints = Array.from({ length: 10 }, (_, x) => ({ x, y: 1 }));
@@ -466,7 +513,7 @@ describe('限时双倍奖励食物', () => {
       engine.start();
 
       expect(() => engine.advanceTime(deltaMs)).not.toThrow();
-      expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+      expect(engine.snapshot().foods.filter(({ kind }) => kind === 'normal')).toHaveLength(6);
     },
   );
 

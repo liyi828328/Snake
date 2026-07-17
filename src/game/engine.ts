@@ -30,6 +30,8 @@ import type {
   RandomSource,
 } from './types';
 
+const MAX_BONUS_TIMER_TRANSITIONS_PER_ADVANCE = 1_000;
+
 export interface SnakeEngineOptions {
   readonly width?: number;
   readonly height?: number;
@@ -123,8 +125,17 @@ export class SnakeEngine {
         return;
       }
       this.foods.push(food);
-      this.invalidateSnapshot();
     }
+  }
+
+  private foodsMatch(previous: readonly Food[]): boolean {
+    return previous.length === this.foods.length && previous.every((food, index) => {
+      const current = this.foods[index];
+      return current !== undefined
+        && food.x === current.x
+        && food.y === current.y
+        && food.kind === current.kind;
+    });
   }
 
   private nextFood(kind: FoodKind): Food | null {
@@ -217,26 +228,47 @@ export class SnakeEngine {
       return;
     }
 
-    if (this.bonusRemainingMs > 0) {
-      this.bonusRemainingMs = Math.max(0, this.bonusRemainingMs - deltaMs);
-      if (this.bonusRemainingMs === 0) {
-        const previousLength = this.foods.length;
-        this.foods = this.foods.filter(({ kind }) => kind === 'normal');
-        if (this.foods.length !== previousLength) {
-          this.invalidateSnapshot();
+    const previousFoods = [...this.foods];
+    let remainingMs = deltaMs;
+    let transitionCount = 0;
+
+    try {
+      while (
+        remainingMs > 0
+        && transitionCount < MAX_BONUS_TIMER_TRANSITIONS_PER_ADVANCE
+      ) {
+        const hadActiveBonus = this.bonusRemainingMs > 0;
+        const untilExpiryMs = hadActiveBonus
+          ? this.bonusRemainingMs
+          : Number.POSITIVE_INFINITY;
+        const elapsedMs = Math.min(remainingMs, this.bonusCountdownMs, untilExpiryMs);
+
+        this.bonusCountdownMs -= elapsedMs;
+        if (hadActiveBonus) {
+          this.bonusRemainingMs -= elapsedMs;
+        }
+        remainingMs -= elapsedMs;
+
+        if (hadActiveBonus && this.bonusRemainingMs === 0) {
+          this.foods = this.foods.filter(({ kind }) => kind === 'normal');
+          transitionCount += 1;
+        }
+
+        if (this.bonusCountdownMs === 0) {
+          const count = this.sampleInteger(BONUS_FOOD_MIN, BONUS_FOOD_MAX);
+          this.spawnBonusFoods(count);
+          this.bonusRemainingMs = BONUS_FOOD_LIFETIME_MS;
+          this.bonusCountdownMs = this.sampleInteger(
+            BONUS_FOOD_MIN_INTERVAL_MS,
+            BONUS_FOOD_MAX_INTERVAL_MS,
+          );
+          transitionCount += 1;
         }
       }
-    }
-
-    this.bonusCountdownMs = Math.max(0, this.bonusCountdownMs - deltaMs);
-    if (this.bonusCountdownMs === 0) {
-      const count = this.sampleInteger(BONUS_FOOD_MIN, BONUS_FOOD_MAX);
-      this.spawnBonusFoods(count);
-      this.bonusRemainingMs = BONUS_FOOD_LIFETIME_MS;
-      this.bonusCountdownMs = this.sampleInteger(
-        BONUS_FOOD_MIN_INTERVAL_MS,
-        BONUS_FOOD_MAX_INTERVAL_MS,
-      );
+    } finally {
+      if (!this.foodsMatch(previousFoods)) {
+        this.invalidateSnapshot();
+      }
     }
   }
 
