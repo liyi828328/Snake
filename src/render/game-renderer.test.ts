@@ -120,14 +120,14 @@ describe('渲染器棋盘尺寸', () => {
       ensureLayout(columns?: number, rows?: number): void;
       applyQuality(): void;
       drawSnake(): void;
-      drawFood(): void;
+      drawFoods(): void;
       drawEffects(): void;
     };
     internals.app = { render: vi.fn() };
     internals.ensureLayout = ensureLayout;
     internals.applyQuality = vi.fn();
     internals.drawSnake = vi.fn();
-    internals.drawFood = vi.fn();
+    internals.drawFoods = vi.fn();
     internals.drawEffects = vi.fn();
     const current = { ...snapshot([{ x: 2, y: 2 }]), width: 14, height: 10 };
 
