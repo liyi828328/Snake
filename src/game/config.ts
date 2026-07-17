@@ -1,9 +1,16 @@
 import type { Direction, Point } from './types';
 
-export const DEFAULT_WIDTH = 32;
+export const DEFAULT_WIDTH = 40;
 export const DEFAULT_HEIGHT = 24;
 export const INITIAL_LENGTH = 4;
 export const SCORE_PER_FOOD = 10;
+export const BONUS_SCORE_PER_FOOD = SCORE_PER_FOOD * 2;
+export const NORMAL_FOOD_TARGET = 6;
+export const BONUS_FOOD_MIN = 6;
+export const BONUS_FOOD_MAX = 10;
+export const BONUS_FOOD_MIN_INTERVAL_MS = 30_000;
+export const BONUS_FOOD_MAX_INTERVAL_MS = 120_000;
+export const BONUS_FOOD_LIFETIME_MS = 5_000;
 export const INITIAL_TICK_MS = 150;
 export const SPEED_UP_EVERY_FOOD = 5;
 export const TICK_MS_DECREMENT = 5;

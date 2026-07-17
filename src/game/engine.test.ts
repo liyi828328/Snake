@@ -1,12 +1,39 @@
 import { describe, expect, it } from 'vitest';
 
-import { tickMsForFoodCount } from './config';
+import {
+  BONUS_FOOD_LIFETIME_MS,
+  BONUS_FOOD_MAX,
+  BONUS_FOOD_MAX_INTERVAL_MS,
+  BONUS_FOOD_MIN,
+  BONUS_FOOD_MIN_INTERVAL_MS,
+  BONUS_SCORE_PER_FOOD,
+  DEFAULT_HEIGHT,
+  DEFAULT_WIDTH,
+  NORMAL_FOOD_TARGET,
+  SCORE_PER_FOOD,
+  tickMsForFoodCount,
+} from './config';
 import { SnakeEngine } from './engine';
 import { spawnFood } from './food';
 
 describe('速度配置', () => {
   it('食物数量很大时仍不会低于最低间隔', () => {
     expect(tickMsForFoodCount(10_000)).toBe(65);
+  });
+});
+
+describe('多食物配置', () => {
+  it('提供 40×24 棋盘、六个常驻食物和限时双倍奖励参数', () => {
+    expect(DEFAULT_WIDTH).toBe(40);
+    expect(DEFAULT_HEIGHT).toBe(24);
+    expect(NORMAL_FOOD_TARGET).toBe(6);
+    expect(BONUS_FOOD_MIN).toBe(6);
+    expect(BONUS_FOOD_MAX).toBe(10);
+    expect(BONUS_FOOD_MIN_INTERVAL_MS).toBe(30_000);
+    expect(BONUS_FOOD_MAX_INTERVAL_MS).toBe(120_000);
+    expect(BONUS_FOOD_LIFETIME_MS).toBe(5_000);
+    expect(SCORE_PER_FOOD).toBe(10);
+    expect(BONUS_SCORE_PER_FOOD).toBe(20);
   });
 });
 

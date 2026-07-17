@@ -3,6 +3,12 @@ export interface Point {
   readonly y: number;
 }
 
+export type FoodKind = 'normal' | 'bonus';
+
+export interface Food extends Point {
+  readonly kind: FoodKind;
+}
+
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
 export type GameStatus = 'ready' | 'playing' | 'paused' | 'gameOver' | 'completed';
