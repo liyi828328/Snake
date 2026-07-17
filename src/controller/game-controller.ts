@@ -75,7 +75,9 @@ export class GameController {
     const events: GameEvent[] = [];
 
     if (before.status === 'playing') {
-      const result = this.clock.consume(deltaMs, before.tickMs);
+      this.engine.advanceTime(deltaMs);
+      current = this.engine.snapshot();
+      const result = this.clock.consume(deltaMs, current.tickMs);
       alpha = result.alpha;
       for (let step = 0; step < result.steps; step += 1) {
         this.previousSnapshot = current;

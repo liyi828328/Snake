@@ -228,6 +228,26 @@ describe('游戏控制器', () => {
     expect(frames.callbacks.size).toBe(0);
   });
 
+  it('仅在进行中的动画帧推进奖励时间，并使用钳制后的 delta', () => {
+    const { controller, engine, frames } = setup();
+    const advanceTime = vi.spyOn(engine, 'advanceTime');
+    controller.start();
+
+    window.dispatchEvent(new Event('resize'));
+    frames.run(16);
+    expect(advanceTime).not.toHaveBeenCalled();
+
+    press(' ');
+    frames.run(500);
+    expect(advanceTime).toHaveBeenCalledTimes(1);
+    expect(advanceTime).toHaveBeenLastCalledWith(250);
+
+    press(' ');
+    window.dispatchEvent(new Event('resize'));
+    frames.run(516);
+    expect(advanceTime).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['ready', 'paused'] as const)(
     '页面隐藏期间缩放后恢复可见会为 %s 合并一次静态重绘',
     (status) => {
@@ -463,6 +483,45 @@ describe('游戏控制器', () => {
     expect(renderer.renders[0]?.previous.body[0]).toEqual({ x: 4, y: 2 });
     expect(renderer.renders[0]?.current.body[0]).toEqual({ x: 5, y: 2 });
     expect(audio.events).toEqual(renderer.eventBatches[0]);
+  });
+
+  it('奖励在控制器当前帧渲染中可见', () => {
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: () => 0,
+    });
+    engine.start();
+    engine.advanceTime(29_750);
+    const { controller, renderer, frames } = setup({ engine });
+    controller.start();
+
+    frames.run(250);
+
+    expect(renderer.renders.at(-1)?.current.foods).toContainEqual(
+      expect.objectContaining({ kind: 'bonus' }),
+    );
+  });
+
+  it('奖励生成时即使未移动也渲染当前快照', () => {
+    const engine = new SnakeEngine({
+      width: 14,
+      height: 10,
+      random: () => 0,
+    });
+    engine.start();
+    engine.advanceTime(29_900);
+    const { controller, renderer, frames } = setup({ engine });
+    controller.start();
+
+    frames.run(100);
+
+    const render = renderer.renders.at(-1);
+    expect(render?.current.body).toEqual(render?.previous.body);
+    expect(render?.current).not.toBe(render?.previous);
+    expect(render?.current.foods).toContainEqual(
+      expect.objectContaining({ kind: 'bonus' }),
+    );
   });
 
   it('真实引擎推进一格后暂停时固定渲染暂停快照', () => {
