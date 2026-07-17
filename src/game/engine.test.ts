@@ -497,25 +497,45 @@ describe('限时双倍奖励食物', () => {
     },
   );
 
-  it.each([Number.MAX_SAFE_INTEGER, Number.MAX_VALUE])(
-    '极大的有限时间增量 %s 不会使计时停滞',
-    (deltaMs) => {
-      const points = [
-        ...Array.from({ length: 6 }, (_, x) => ({ x, y: 0 })),
-        ...Array.from({ length: 6 }, (_, x) => ({ x, y: 1 })),
-      ];
-      const engine = new SnakeEngine({
-        width: 14,
-        height: 10,
-        random: sequenceRandom(0, 0, 0),
-        foodSpawner: scriptedFoodSpawner(...points),
-      });
-      engine.start();
+  it('极大有限增量显式限制为最长间隔加奖励生命期', () => {
+    const normalPoints = Array.from({ length: 6 }, (_, x) => ({ x, y: 0 }));
+    let hugeRandomCalls = 0;
+    let clampedRandomCalls = 0;
+    const huge = new SnakeEngine({
+      width: 256,
+      height: 256,
+      random: () => {
+        hugeRandomCalls += 1;
+        return 0;
+      },
+      foodSpawner: scriptedFoodSpawner(...normalPoints),
+    });
+    const clamped = new SnakeEngine({
+      width: 256,
+      height: 256,
+      random: () => {
+        clampedRandomCalls += 1;
+        return 0;
+      },
+      foodSpawner: scriptedFoodSpawner(...normalPoints),
+    });
+    huge.start();
+    clamped.start();
 
-      expect(() => engine.advanceTime(deltaMs)).not.toThrow();
-      expect(engine.snapshot().foods.filter(({ kind }) => kind === 'normal')).toHaveLength(6);
-    },
-  );
+    huge.advanceTime(Number.MAX_VALUE);
+    clamped.advanceTime(BONUS_FOOD_MAX_INTERVAL_MS + BONUS_FOOD_LIFETIME_MS);
+    expect(huge.snapshot().foods).toEqual(clamped.snapshot().foods);
+    expect(hugeRandomCalls).toBe(clampedRandomCalls);
+
+    huge.advanceTime(24_999);
+    clamped.advanceTime(24_999);
+    expect(huge.snapshot().foods).toEqual(clamped.snapshot().foods);
+    huge.advanceTime(1);
+    clamped.advanceTime(1);
+    expect(huge.snapshot().foods).toEqual(clamped.snapshot().foods);
+    expect(huge.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(6);
+    expect(hugeRandomCalls).toBe(clampedRandomCalls);
+  });
 
   it('暂停时重开会清除奖励并重新抽取首次倒计时', () => {
     const points = [
@@ -561,6 +581,38 @@ describe('限时双倍奖励食物', () => {
     const foods = engine.snapshot().foods;
     expect(foods).toHaveLength(6);
     expect(foods.every(({ kind }) => kind === 'normal')).toBe(true);
+    expect(new Set(foods.map(({ x, y }) => `${x},${y}`)).size).toBe(6);
+  });
+
+  it('奖励占满剩余空间时未补足的普通食物会在奖励到期后补齐', () => {
+    const engine = new SnakeEngine({
+      width: 6,
+      height: 2,
+      random: sequenceRandom(0, 0, 0),
+      foodSpawner: scriptedFoodSpawner(
+        { x: 4, y: 1 },
+        { x: 5, y: 1 },
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+        { x: 3, y: 0 },
+        { x: 4, y: 0 },
+        { x: 5, y: 0 },
+      ),
+    });
+    engine.start();
+    engine.advanceTime(30_000);
+
+    expect(engine.step()).toEqual([
+      { type: 'foodEaten', at: { x: 4, y: 1 }, score: 10 },
+    ]);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'normal')).toHaveLength(5);
+    expect(engine.snapshot().foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(2);
+
+    engine.advanceTime(5_000);
+    const foods = engine.snapshot().foods;
+    expect(foods.filter(({ kind }) => kind === 'normal')).toHaveLength(6);
+    expect(foods.filter(({ kind }) => kind === 'bonus')).toHaveLength(0);
     expect(new Set(foods.map(({ x, y }) => `${x},${y}`)).size).toBe(6);
   });
 });

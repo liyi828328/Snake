@@ -30,7 +30,8 @@ import type {
   RandomSource,
 } from './types';
 
-const MAX_BONUS_TIMER_TRANSITIONS_PER_ADVANCE = 1_000;
+// Bound one call to the longest spawn interval plus one complete reward lifetime.
+const MAX_BONUS_TIME_ADVANCE_MS = BONUS_FOOD_MAX_INTERVAL_MS + BONUS_FOOD_LIFETIME_MS;
 
 export interface SnakeEngineOptions {
   readonly width?: number;
@@ -229,14 +230,10 @@ export class SnakeEngine {
     }
 
     const previousFoods = [...this.foods];
-    let remainingMs = deltaMs;
-    let transitionCount = 0;
+    let remainingMs = Math.min(deltaMs, MAX_BONUS_TIME_ADVANCE_MS);
 
     try {
-      while (
-        remainingMs > 0
-        && transitionCount < MAX_BONUS_TIMER_TRANSITIONS_PER_ADVANCE
-      ) {
+      while (remainingMs > 0) {
         const hadActiveBonus = this.bonusRemainingMs > 0;
         const untilExpiryMs = hadActiveBonus
           ? this.bonusRemainingMs
@@ -251,7 +248,7 @@ export class SnakeEngine {
 
         if (hadActiveBonus && this.bonusRemainingMs === 0) {
           this.foods = this.foods.filter(({ kind }) => kind === 'normal');
-          transitionCount += 1;
+          this.fillNormalFoods();
         }
 
         if (this.bonusCountdownMs === 0) {
@@ -262,7 +259,6 @@ export class SnakeEngine {
             BONUS_FOOD_MIN_INTERVAL_MS,
             BONUS_FOOD_MAX_INTERVAL_MS,
           );
-          transitionCount += 1;
         }
       }
     } finally {
